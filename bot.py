@@ -4,13 +4,17 @@ import bcrypt
 import random
 import logging
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from database import init_db
 from dotenv import load_dotenv
 from telegram.error import BadRequest
 import mysql.connector
 import re
+from fastapi import FastAPI, Request
+import asyncio
+import uvicorn
+
 
 
 # Load environment variables
@@ -47,6 +51,114 @@ FETCH_PLAYER_BALANCE="https://agents.wayxbet.com/global/api/Player/getPlayerBala
 DEPOSIT_URL = "https://agents.wayxbet.com/global/api/Player/depositToPlayer"
 WITHDRAW_WEBSITE_URL = "https://agents.wayxbet.com/global/api/Player/withdrawFromPlayer"
 exchange_rate = 10000
+WEBHOOK_URL = "https://51e6-194-59-6-39.ngrok-free.app/webhook" 
+
+
+
+app = FastAPI()
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# ✅ Set up logging for debugging
+logging.basicConfig(level=logging.INFO) 
+
+async def start_bot():
+    """Initialize and start the Telegram bot."""
+        
+    await telegram_app.initialize()
+    await telegram_app.start()
+    print("✅ Telegram bot initialized!")
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """Receive updates from Telegram and process them."""
+    try:
+        update_data = await request.json()
+        if not update_data:
+            raise ValueError("Received empty JSON from Telegram")
+        
+        logging.info(f"📩 Received update: {update_data}")
+        update = Update.de_json(update_data, telegram_app.bot)
+        await telegram_app.process_update(update)
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        logging.error(f"❌ Error processing webhook: {e}")
+        return {"status": "error", "message": str(e)}
+
+async def set_webhook():
+    """Set Telegram webhook to FastAPI server."""
+    response = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+        json={"url": WEBHOOK_URL},
+    )
+    if response.status_code == 200:
+        print("✅ Webhook set successfully!")
+    else:
+        print(f"❌ Failed to set webhook: {response.text}")
+
+
+@app.on_event("startup")
+async def on_startup():
+    """Run on FastAPI startup: Set webhook & start the bot."""
+    await set_webhook()
+    asyncio.create_task(start_bot())  # ✅ Initialize the bot
+    
+
+logging.basicConfig(level=logging.DEBUG)  # ✅ Enable debug logging
+from fastapi import FastAPI, Request
+import logging
+import re
+from datetime import datetime
+import sys
+
+
+
+@app.post("/sms")
+async def receive_sms(request: Request):
+    """Receive SMS from SMS Forwarder and process the transaction."""
+    try:
+        # ✅ Get raw request body and headers
+        raw_body = await request.body()
+        headers = request.headers
+
+        print(f"📩 Raw request body: {raw_body.decode('utf-8')}")
+        print(f"📩 Headers: {headers}")  # ✅ Check Content-Type
+        
+        # ✅ Safely parse JSON
+        try:
+            sms_data = await request.json()
+        except Exception as json_error:
+            sys.stderr.write(f"❌ JSON Parsing Error: {json_error}\n")
+            return {"status": "error", "message": "Invalid JSON format"}
+
+        # ✅ Extract SMS text and timestamp
+        raw_text = sms_data.get("key", "").strip()
+        raw_time = sms_data.get("time", "").strip()
+
+        # ✅ Convert time to `YYYY-MM-DD HH:MM:SS` format
+        try:
+            formatted_time = datetime.strptime(raw_time, "%d/%m, %I:%M %p").strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            formatted_time = "Unknown"
+
+        print(f"📩 Received SMS: {raw_text} at {formatted_time}")
+
+        # ✅ Process the cleaned SMS content
+        result = await process_sms(raw_text, update=None, context=None)
+        
+        
+
+        return {"status": "ok", "message": result}
+
+    except Exception as e:
+        sys.stderr.write(f"❌ Error processing SMS: {e}\n")  # ✅ Force print errors
+        logging.error(f"❌ Error processing SMS: {e}")
+        return {"status": "error", "message": str(e)}
+
+    
+
+# TODO Call this function when starting the bot
 
 
 # Global session for agent authentication
@@ -818,9 +930,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🔹 فيك تسحب مصاري لحساب بيمو ، Payeer، أو Syriatel Cash.\n"
         
         f"💰 *نظام الرسوم على عمليات السحب:* \n"
-        f"🔹 *15٪* - للمبالغ *أكبر من 15 مليون* SYP\n"
-        f"🔹 *10٪* - للمبالغ *بين 1 مليون و 15 مليون* SYP\n"
-        f"🔹 *5٪* - للمبالغ *أقل من 1 مليون* SYP\n\n"
+        
+        f"🔹 *5٪* - على كل عملية سحب\n\n"
         f"🔹 قدم طلب السحب وحنعالجه خلال 24 ساعة."
      )
      keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data='help')]]
@@ -837,9 +948,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
      help_text = (
         "📞 *الدعم*\n\n"
         "🔹 إذا واجهت أي مشكلة،  تواصل معنا عبر:\n"
-        "📧 *البريد الإلكتروني:* support@yourbot.com\n"
-        "☎️ *رقم الهاتف:* -xxxxxxxx\n"
-        "🗣️ *المحادثة الفورية:* عبر بوت التليجرام."
+        
+        "☎️ *رقم الهاتف:* -0991 685 557\n"
+        
      )
      keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data='help')]]
      reply_markup = InlineKeyboardMarkup(keyboard)
@@ -860,6 +971,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📌 *يُعدّ انضمامك للبوت واستخدامه موافقة على هذه الشروط، وتحمل المسؤولية الكاملة عن أي انتهاك لها.*\n\n"
        
      )
+     
      await query.edit_message_text(terms_text)
      
     elif query.data == "show_transactions":
@@ -1111,14 +1223,21 @@ async def handle_charge_syriatel_transaction_id(update: Update, context: Context
     try:
         
         # ✅ Check if the transaction ID already exists
-        cursor.execute("SELECT transaction_id FROM transactions WHERE external_transaction_id = %s", (syriatel_cash_transaction_id,))
+        cursor.execute("SELECT status FROM transactions WHERE external_transaction_id = %s", (syriatel_cash_transaction_id,))
         existing_transaction = cursor.fetchone()
 
         if existing_transaction:
+          transaction_status = existing_transaction[0]  # Extract the status
+
+          if transaction_status == "pending":
+            await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
+                           "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
+                           parse_mode="Markdown")
+          else:
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
-                               "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", parse_mode="Markdown")
-            return
-        
+                           "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
+                           parse_mode="Markdown")
+          return  # Stop further execution
         
         # ✅ Fetch player ID from accounts table
         cursor.execute("SELECT player_id FROM accounts WHERE user_id = %s", (user_id,))
@@ -1208,14 +1327,21 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
     try:
         
         # ✅ Check if the transaction ID already exists
-        cursor.execute("SELECT transaction_id FROM transactions WHERE external_transaction_id = %s", (charge_payeer_transaction_id,))
+        cursor.execute("SELECT status FROM transactions WHERE external_transaction_id = %s", (charge_payeer_transaction_id,))
         existing_transaction = cursor.fetchone()
 
         if existing_transaction:
+          transaction_status = existing_transaction[0]  # Extract the status
+
+          if transaction_status == "pending":
+            await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
+                           "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
+                           parse_mode="Markdown")
+          else:
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
-                               "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", parse_mode="Markdown")
-            return
-        
+                           "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
+                           parse_mode="Markdown")
+          return  # Stop further execution
         
         # ✅ Fetch player ID from accounts table
         cursor.execute("SELECT player_id FROM accounts WHERE user_id = %s", (user_id,))
@@ -1310,14 +1436,23 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
 
     try:
         
-        # ✅ Check if the transaction ID already exists
-        cursor.execute("SELECT transaction_id FROM transactions WHERE external_transaction_id = %s", (bemo_transaction_id,))
+        # ✅ Check if the transaction ID already exists and get its status
+        cursor.execute("SELECT status FROM transactions WHERE external_transaction_id = %s", (bemo_transaction_id,))
         existing_transaction = cursor.fetchone()
 
         if existing_transaction:
+          transaction_status = existing_transaction[0]  # Extract the status
+
+          if transaction_status == "pending":
+            await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
+                           "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
+                           parse_mode="Markdown")
+          else:
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
-                               "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", parse_mode="Markdown")
-            return
+                           "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
+                           parse_mode="Markdown")
+          return  # Stop further execution
+
         
         
         # ✅ Fetch player ID from accounts table
@@ -1363,8 +1498,7 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
     
     
     
-# ------>> here call the function that check if the transaction is validated(def check_bemo_transaction_validation) 
-# ------>> then the function (def check_bemo_transaction_validation) update the user's bot_balance with the amount extracted form the sms 
+
    
  
  
@@ -1461,6 +1595,7 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
     result = verify_transaction_from_user_input(transaction_id,user_id)
     if "error" in result:
      await send_message(result["error"])
+     
     else:
      keyboard = [
                 [InlineKeyboardButton("🌐 WayXbet الانتقال الى موقع ", url="https://m.wayxbet.com/en/")],
@@ -1475,64 +1610,145 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
 
 #This function is triggered when an SMS is received via forwarding.
 
-def process_sms(sms_text):
+
+async def process_sms(sms_text, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None):
     """Extract transaction details from SMS and verify against pending transactions."""
-    
-    # ✅ Define SMS pattern (Modify according to actual SMS format)
-    pattern = r"رصيدك (\d+) تم تحويله من (\d{10}) .* رقم العملية: (\d+)"
-    
-    match = re.search(pattern, sms_text)
-    if not match:
-        return {"error": "SMS format does not match expected pattern"}
-    
-    sms_amount = float(match.group(1))  # Extracted amount
-    sender_phone = match.group(2)  # Sender's phone number
-    sms_transaction_id = match.group(3)  # Transaction ID
-    
-    # ✅ Connect to MySQL
-    conn = connect_db()
-    cursor = conn.cursor()
-    
-    # ✅ Check if the transaction exists in `transactions`
-    cursor.execute("SELECT user_id, status FROM transactions WHERE external_transaction_id = %s", (sms_transaction_id,))
-    transaction = cursor.fetchone()
-    
-    if transaction:
-        user_id, status = transaction
-        
-        if status != "pending":
-            conn.close()
-            return {"error": "Transaction is already verified or completed"}
-        
-        # ✅ Verify transaction amount
-        cursor.execute("SELECT amount FROM transactions WHERE external_transaction_id = %s", (sms_transaction_id,))
-        db_amount = cursor.fetchone()[0]
+    bot = Bot(token= BOT_TOKEN)
+    print("📩 Processing new SMS...")
 
-        if db_amount != sms_amount:
-            conn.close()
-            return {"error": "Transaction amount does not match"}
+    # ✅ Detect message source (Reply in Bot Chat)
+    user_id = None  # Default if triggered by an SMS
+    send_message = None
 
-        # ✅ Update transaction status and credit user balance
-        cursor.execute("""
-            UPDATE transactions 
-            SET status = 'approved', verification_source = 'SMS' 
-            WHERE external_transaction_id = %s
-        """, (sms_transaction_id,))
+    if update and context:
+        if update.message:
+            user_id = update.message.from_user.id
+            send_message = update.message.reply_text
+        elif update.callback_query:
+            user_id = update.callback_query.from_user.id
+            send_message = update.callback_query.message.reply_text
 
-        cursor.execute("UPDATE wallets SET bot_balance = bot_balance + %s WHERE user_id = %s", (sms_amount, user_id))
-        conn.commit()
-        conn.close()
+    # ✅ Step 1: Remove "From: ..." if it exists
+    sms_text = re.sub(r"^From : .+\n", "", sms_text)
+    print(f"🔍 Cleaned SMS Text: {sms_text}")
 
-        return {"success": True, "message": f"Transaction {sms_transaction_id} verified and balance updated!"}
-    
+    # ✅ Step 2: Check both patterns (Bemo & Syriatel Cash)
+    pattern_bemo = r"استلام حوالة الكترونية (\d+)ل.س من (.+?)،رقم العملية (\d{9})"
+    pattern_syriatel = r"تم استلام مبلغ (\d+) ل.س بنجاح. رقم العملية هو (\d{12})"
+
+    match_bemo = re.search(pattern_bemo, sms_text)
+    match_syriatel = re.search(pattern_syriatel, sms_text)
+
+    if match_bemo:
+        print("✅ Matched Pattern: Bemo Bank")
+        sms_amount = float(match_bemo.group(1))
+        sender_name = match_bemo.group(2)
+        sms_transaction_id = match_bemo.group(3)
+    elif match_syriatel:
+        print("✅ Matched Pattern: Syriatel Cash")
+        sms_amount = float(match_syriatel.group(1))
+        sender_name = "Syriatel Cash"
+        sms_transaction_id = match_syriatel.group(2)
     else:
-        # ✅ If transaction is not found, store SMS in `sms_logs` table
-        cursor.execute("INSERT INTO sms_logs (external_transaction_id, amount, sender_phone) VALUES (%s, %s, %s)", 
-                       (sms_transaction_id, sms_amount, sender_phone))
-        conn.commit()
+        print("❌ SMS format does not match expected patterns")
+        if send_message:
+            await send_message("❌ *رسالة غير متوافقة مع النمط المطلوب.*", parse_mode="Markdown")
+        return {"error": "❌ رسالة غير متوافقة مع النمط المطلوب"}
+
+    print(f"✅ Extracted Data: Transaction ID={sms_transaction_id}, Amount={sms_amount}, Sender={sender_name}")
+
+    # ✅ Step 3: Connect to MySQL
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        print("✅ Database connection established.")
+
+        # ✅ Step 4: Check if the transaction exists in `transactions`
+        cursor.execute("SELECT user_id, amount, status FROM transactions WHERE external_transaction_id = %s", (sms_transaction_id,))
+        transaction = cursor.fetchone()
+
+        if transaction:
+            db_user_id, db_amount, status = transaction
+            print(f"✅ Transaction found: User ID={db_user_id}, Status={status}")
+
+            # ✅ Step 5: Verify transaction status
+            if status != "pending":
+                print("⚠️ Transaction is already verified or completed.")
+                if db_user_id:
+                    await bot.send_message(
+                        chat_id=db_user_id,
+                        text=
+                        f"⚠️ *هذه العملية تمت معالجتها بالفعل، لا يمكنك إضافتها مرة أخرى.*", parse_mode="Markdown")
+                return {"error": "⚠️ هذه العملية تمت معالجتها بالفعل."}
+
+            # ✅ Step 6: Verify transaction amount
+            if db_amount != sms_amount:
+                print("❌ Transaction amount does not match!")
+                if db_user_id:
+                    await bot.send_message(
+                        chat_id=db_user_id,
+                        text=
+                        f"❌ خطأ في المبلغ!.. تاكد من المبلغ وحاول مرة اخرى", parse_mode="Markdown")
+                    cursor.execute("DELETE FROM transactions where external_transaction_id =%s",(sms_transaction_id,))
+                    cursor.execute("INSERT INTO sms_logs (transaction_id, amount, sender_phone) VALUES (%s, %s, %s)", 
+                        (sms_transaction_id, sms_amount, sender_name))
+
+                    conn.commit()
+                return {"error": "❌ المبلغ غير مطابق!"}
+
+            # ✅ Step 7: Approve transaction and update user balance
+            cursor.execute("""
+                UPDATE transactions 
+                SET status = 'approved', verification_source = 'SMS' 
+                WHERE external_transaction_id = %s
+            """, (sms_transaction_id,))
+
+            cursor.execute("UPDATE wallets SET bot_balance = bot_balance + %s WHERE user_id = %s", (sms_amount, db_user_id))
+            conn.commit()
+
+            print(f"✅ Transaction {sms_transaction_id} verified and balance updated!")
+
+            # ✅ Notify user inside the bot chat
+            keyboard = [
+                [InlineKeyboardButton("🌐 WayXbet الانتقال الى موقع ", url="https://m.wayxbet.com/en/")],
+                [InlineKeyboardButton("💰 شحن الحساب", callback_data='charge_website_account'), 
+                InlineKeyboardButton("💸 سحب رصيد الحساب", callback_data='withdraw_website')],
+                [InlineKeyboardButton("🔙 رجوع", callback_data='back')]
+                ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if db_user_id:
+             await bot.send_message(
+             chat_id=db_user_id,
+             text=f"✅ *تم تأكيد عمليتك بنجاح!*\n\n💰 *المبلغ:* `{sms_amount}` ل.س\n📌 *رقم العملية:* `{sms_transaction_id}`",
+             parse_mode="Markdown",
+             reply_markup=reply_markup  # ✅ Include the inline keyboard
+             )
+
+            # ✅ Reset user state
+            if context:
+                context.user_data["state"] = None
+
+            return {"success": f"✅ تم تأكيد العملية وإضافة {sms_amount} ل.س إلى رصيدك!"}
+
+        else:
+            print(f"⚠️ Transaction {sms_transaction_id} not found, saving to `sms_logs`...")
+            cursor.execute("INSERT INTO sms_logs (transaction_id, amount, sender_phone) VALUES (%s, %s, %s)", 
+                        (sms_transaction_id, sms_amount, sender_name))
+            conn.commit()
+
+            return {"info": "⚠️ العملية غير موجودة، تم حفظها للمراجعة لاحقًا."}
+
+    except Exception as e:
+        print(f"❌ Database Error: {e}")
+        return {"error": f"❌ خطأ في النظام: {str(e)}"}
+
+    finally:
+        cursor.close()
         conn.close()
-        
-        return {"info": "Transaction not found in records yet. Saved to SMS logs for later verification."}
+        print("✅ Database connection closed.")
+
+
 
 
 
@@ -1562,8 +1778,10 @@ def verify_transaction_from_user_input(transaction_id, user_id):
             sms_amount = sms_entry[0]
 
             if sms_amount != amount:
+                cursor.execute("DELETE FROM transactions WHERE external_transaction_id = %s",(transaction_id,))
+                conn.commit()  # ✅ Commit the deletion
                 conn.close()
-                return {"error": "SMS amount does not match the entered transaction amount"}
+                return {"error": "المبلغ في الرسالة النصية لا يتطابق مع المبلغ المُدخل للمعاملة ❌⚠️ يرجى التحقق والمحاولة مرة أخرى 🔄✅"}
 
             # ✅ Approve the transaction & credit balance
             cursor.execute("""
@@ -1583,10 +1801,12 @@ def verify_transaction_from_user_input(transaction_id, user_id):
 
         else:
             conn.close()
-            return {"error": "Transaction is pending verification. Please wait for the SMS to be received."}
-
-
-
+            return {
+                        "error": "🔄 العملية قيد المعالجة... يُرجى الانتظار حتى اكتمالها.\n"
+                         "⏳ إذا لم تكتمل خلال 10 دقائق، حاول مرة أخرى.\n"
+                         "❌ قد يكون رقم العملية غير صحيح.\n"
+                         "📞 في حال كان الرقم صحيحًا ولم تكتمل العملية خلال 20 دقيقة ، يُرجى التواصل مع الدعم."
+                    }
 
 
 #==================================== website_charge_amount handler ============================
@@ -2090,9 +2310,7 @@ async def process_withdrawal_amount_from_bot_to_user(update: Update, context: Co
             f"💵 *سعر الصرف:*  Payeer 1 USD = {exchange_rate} SYP\n\n"
             f"⚠️ *هل أنت متأكد من سحب {USD_to_SYP} SYP عبر {method.upper()}؟*\n\n"
             f"💰 *نظام الرسوم على عمليات السحب:* \n"
-            f"🔹 *15٪* - للمبالغ *أكبر من 15 مليون* SYP\n"
-            f"🔹 *10٪* - للمبالغ *بين 1 مليون و 15 مليون* SYP\n"
-            f"🔹 *5٪* - للمبالغ *أقل من 1 مليون* SYP\n\n"
+            f"🔹 *5٪* - على كل عملية سحب\n\n"
             f"⚠️ *يتم خصم الرسوم تلقائيًا عند تنفيذ الطلب.*"
         )
         await send_message(withdrawal_message, reply_markup=reply_markup, parse_mode="Markdown")
@@ -2112,9 +2330,7 @@ async def process_withdrawal_amount_from_bot_to_user(update: Update, context: Co
         withdrawal_message = (
             f"⚠️ *هل أنت متأكد من سحب {amount} SYP عبر {method.upper()}؟*\n\n"
             f"💰 *نظام الرسوم على عمليات السحب:* \n"
-            f"🔹 *15٪* - للمبالغ *أكبر من 15 مليون* SYP\n"
-            f"🔹 *10٪* - للمبالغ *بين 1 مليون و 15 مليون* SYP\n"
-            f"🔹 *5٪* - للمبالغ *أقل من 1 مليون* SYP\n\n"
+            f"🔹 *5٪* - على كل عملية سحب\n\n"
             f"⚠️ *يتم خصم الرسوم تلقائيًا عند تنفيذ الطلب.*"
         )
         await send_message(withdrawal_message, reply_markup=reply_markup, parse_mode="Markdown")
@@ -2161,12 +2377,8 @@ async def finalize_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # Calculate withdrawal fees
-    if amount >= 15000000:
-        fee_percentage = 0.15
-    elif amount >= 1000000:
-        fee_percentage = 0.10
-    else:
-        fee_percentage = 0.05
+    
+    fee_percentage = 0.05
 
     fee = round(amount * fee_percentage)
     final_amount = amount - fee
@@ -2229,26 +2441,13 @@ async def finalize_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
-    
-def main():
-    """Start the Telegram bot."""
-    conn = connect_db()
-    
-    print("🚀 Starting bot...")
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-    
-
-
-
-
-    print("✅ Bot is running!")
-    application.run_polling()
-    conn.close()
+# ✅ Register handlers
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("help", help_command))
+telegram_app.add_handler(CallbackQueryHandler(button))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
 if __name__ == "__main__":
+    
     login_as_agent()
-    main()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
