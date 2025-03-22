@@ -4,7 +4,7 @@ import bcrypt
 import random
 import logging
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from database import init_db
 from dotenv import load_dotenv
@@ -51,7 +51,7 @@ FETCH_PLAYER_BALANCE="https://agents.wayxbet.com/global/api/Player/getPlayerBala
 DEPOSIT_URL = "https://agents.wayxbet.com/global/api/Player/depositToPlayer"
 WITHDRAW_WEBSITE_URL = "https://agents.wayxbet.com/global/api/Player/withdrawFromPlayer"
 exchange_rate = 10000
-WEBHOOK_URL = "https://51e6-194-59-6-39.ngrok-free.app/webhook" 
+WEBHOOK_URL = "https://fdfa-89-39-107-196.ngrok-free.app/webhook" 
 
 
 
@@ -361,7 +361,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     first_name = user.first_name  # Get the user's first name
     
     user_exists = None  # Initialize variable
-    
+    welcome_sticker_id = "CAACAgIAAxkBAeLeCmfdgKwm3XwP2yxX-l0gOsdn2xSbAAIxNAAC6BugStKvp8RmJqK8NgQ"  # Replace with your sticker ID
     try:
         conn = connect_db()
         cursor = conn.cursor()
@@ -399,12 +399,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ], [
         InlineKeyboardButton("💸 الرصيد", callback_data='cash'),
         InlineKeyboardButton("📊 عرض آخر 5 معاملات", callback_data="show_transactions")
-    ], [
+    ], 
+    [InlineKeyboardButton("🎰 Slot Machine", callback_data="slot_machine")],
+    [
         InlineKeyboardButton("📜 الشروط و الأحكام", callback_data='terms')
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     message = f"مرحباً👋 `{first_name}` الرجاء اختيار الخدمة من القائمة."
+    await update.message.reply_sticker(sticker=welcome_sticker_id)
 
     # If the user is new, send terms first, then send the main menu
     if terms_text:
@@ -569,6 +572,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         keyboard = [
             [InlineKeyboardButton("💰 (فوري) شحن محفظة البوت", callback_data='charge_bot'),
              InlineKeyboardButton("💸 سحب من محفظة البوت", callback_data="withdraw_from_bot")],
+            
             [InlineKeyboardButton("🔙 رجوع", callback_data='back')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -577,7 +581,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await query.edit_message_text(balance_text, reply_markup=reply_markup, parse_mode="Markdown")
 
+#-------------------------game functions -------------------------------------------------------------------------------
 
+
+    elif query.data == 'slot_machine':
+        await start_slot_machine(update, context)
+        
+        
+
+    
+    
     elif query.data == 'charge_bot':
         context.user_data["state"] = "expecting_no_input"
         keyboard = [
@@ -1005,7 +1018,9 @@ def main_menu_keyboard():
     ], [
         InlineKeyboardButton("💸 الرصيد", callback_data='cash'),
         InlineKeyboardButton("📊 عرض آخر 5 معاملات", callback_data="show_transactions")
-    ], [
+    ],
+    [InlineKeyboardButton("🎰 Slot Machine", callback_data="slot_machine")],
+    [
         InlineKeyboardButton("📜 الشروط و الأحكام", callback_data='terms')
         
     ]]
@@ -1198,10 +1213,14 @@ async def handle_charge_syriatel_transaction_id(update: Update, context: Context
     else:
         return  # Prevent crashes if neither exists
     
-
+    processing_sticker_id = "CAACAgIAAxkBAeLe02fdg4hbX96ODk5SRx08-jtV08apAALDPQACzBMpSoUPzZoaigNGNgQ"
+    erorr_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    warning_sticker_id ="CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+    success_sticker_id="CAACAgIAAxkBAeLfjWfdhmXMrgLfaZJoEAWhTenCC6DrAALnNQACtoxBS2JmFwWrYLwGNgQ"
     syriatel_cash_transaction_id = update.message.text.strip()
     
     if context.user_data.get("state") != "expecting_syriatel_transaction_id":
+        await update.message.reply_sticker(sticker=warning_sticker_id)
         await send_message("⚠️ إدخال غير متوقع! الرجاء اختيار طريقة الدفع أولاً.")
         return
 
@@ -1230,10 +1249,12 @@ async def handle_charge_syriatel_transaction_id(update: Update, context: Context
           transaction_status = existing_transaction[0]  # Extract the status
 
           if transaction_status == "pending":
+            await update.message.reply_sticker(sticker=processing_sticker_id)
             await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
                            "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
                            parse_mode="Markdown")
           else:
+            await update.message.reply_sticker(sticker=erorr_sticker_id)
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
                            "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
                            parse_mode="Markdown")
@@ -1262,6 +1283,7 @@ async def handle_charge_syriatel_transaction_id(update: Update, context: Context
         context.user_data["pending_transaction_id"] = syriatel_cash_transaction_id
         context.user_data["state"] = "awaiting_deposit_amount"
         
+        await update.message.reply_sticker(sticker=success_sticker_id)
         await send_message(
             f"✅ *تم تسجيل رقم العملية بنجاح!*\n\n"
             f"💵 *رقم العملية:* `{syriatel_cash_transaction_id}`\n"
@@ -1304,11 +1326,15 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
         return  # Prevent crashes if neither exists
 
     charge_payeer_transaction_id = update.message.text.strip()
-
+    processing_sticker_id = "CAACAgIAAxkBAeLe02fdg4hbX96ODk5SRx08-jtV08apAALDPQACzBMpSoUPzZoaigNGNgQ"
+    erorr_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    warning_sticker_id ="CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+    success_sticker_id="CAACAgIAAxkBAeLfjWfdhmXMrgLfaZJoEAWhTenCC6DrAALnNQACtoxBS2JmFwWrYLwGNgQ"
     print("📩 Received message:", charge_payeer_transaction_id)  # Debugging
 
     # Ensure bot is expecting a transaction ID
     if context.user_data.get("state") != "expecting_payeer_transaction_id":
+        await update.message.reply_sticker(sticker=warning_sticker_id)
         await send_message("⚠️ إدخال غير متوقع! الرجاء اختيار طريقة الدفع أولاً.")
         return
     
@@ -1316,6 +1342,7 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
 
     # Validate the transaction ID (must be 10 digits)
     if not charge_payeer_transaction_id.isdigit() or len(charge_payeer_transaction_id) != 10:
+        await update.message.reply_sticker(sticker=erorr_sticker_id)
         await send_message("⚠️ رقم العملية غير صحيح! يجب أن يكون 10 أرقام، مثال: 210573xxxx")
         return
     
@@ -1334,10 +1361,12 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
           transaction_status = existing_transaction[0]  # Extract the status
 
           if transaction_status == "pending":
+            await update.message.reply_sticker(sticker=processing_sticker_id)
             await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
                            "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
                            parse_mode="Markdown")
           else:
+            await update.message.reply_sticker(sticker=erorr_sticker_id)
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
                            "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
                            parse_mode="Markdown")
@@ -1367,6 +1396,7 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
         context.user_data["method"] = "Payeer"
         context.user_data["state"] = "awaiting_deposit_amount"
         
+        await update.message.reply_sticker(sticker=success_sticker_id)
         await send_message(
             f"✅ *تم تسجيل رقم العملية بنجاح!*\n\n"
             f"💵 *رقم العملية:* `{charge_payeer_transaction_id}`\n"
@@ -1378,6 +1408,7 @@ async def handle_charge_payeer_transaction_id(update: Update, context: ContextTy
 
     except Exception as e:
         print(f"❌ Database Error: {e}")  # Log error
+        await update.message.reply_sticker(sticker=erorr_sticker_id)
         await send_message("❌ *حدث خطأ أثناء تسجيل الطلب. يرجى المحاولة لاحقاً.*", parse_mode="Markdown")
 
     finally:
@@ -1412,14 +1443,20 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
         return  # Prevent crashes if neither exists
 
     bemo_transaction_id = update.message.text.strip()
+    processing_sticker_id = "CAACAgIAAxkBAeLe02fdg4hbX96ODk5SRx08-jtV08apAALDPQACzBMpSoUPzZoaigNGNgQ"
+    erorr_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    warning_sticker_id ="CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+    success_sticker_id="CAACAgIAAxkBAeLfjWfdhmXMrgLfaZJoEAWhTenCC6DrAALnNQACtoxBS2JmFwWrYLwGNgQ"
     
     # Ensure bot is expecting a transaction ID
     if context.user_data.get("state") != "expecting_bemo_transaction_id":
+        await update.message.reply_sticker(sticker=warning_sticker_id)
         await send_message("⚠️ إدخال غير متوقع! الرجاء اختيار طريقة الدفع أولاً.")
         return
 
     # ✅ Validate transaction ID format (must be 9 digits)
     if not (bemo_transaction_id.isdigit() and len(bemo_transaction_id) == 9):
+        await update.message.reply_sticker(sticker=erorr_sticker_id)
         await send_message(
             "❌ *رقم العملية غير صالح!*\n\n"
             "🔹 *يجب أن يكون رقم العملية مكوناً من 9 أرقام (مثال: `600000123`)*\n\n"
@@ -1444,10 +1481,12 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
           transaction_status = existing_transaction[0]  # Extract the status
 
           if transaction_status == "pending":
+            await update.message.reply_sticker(sticker=processing_sticker_id)
             await send_message("⚠️ *هذه العملية قيد المعالجة..*\n\n"
                            "⏳ *يرجى الانتظار حتى اكتمالها 🫡*", 
                            parse_mode="Markdown")
           else:
+            await update.message.reply_sticker(sticker=erorr_sticker_id)
             await send_message("❌ *رقم العملية الذي أدخلته موجود بالفعل!*\n\n"
                            "🔹 *يرجى التحقق من رقم العملية والمحاولة مجددًا.*", 
                            parse_mode="Markdown")
@@ -1460,6 +1499,7 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
         result = cursor.fetchone()
 
         if not result:
+            await update.message.reply_sticker(sticker=erorr_sticker_id)
             await send_message("❌ *لم يتم العثور على حسابك. يرجى إنشاء حساب أولاً.*", parse_mode="Markdown")
             return
 
@@ -1478,6 +1518,7 @@ async def handle_charge_bemo_transaction_id(update: Update, context: ContextType
         context.user_data["pending_transaction_id"] = bemo_transaction_id
         context.user_data["state"] = "awaiting_deposit_amount"
         
+        await update.message.reply_sticker(sticker=success_sticker_id)
         await send_message(
             f"✅ *تم تسجيل رقم العملية بنجاح!*\n\n"
             f"💵 *رقم العملية:* `{bemo_transaction_id}`\n"
@@ -1517,7 +1558,8 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
         return  
 
     deposit_amount_text = update.message.text.strip()
-
+    processing_sticker_id = "CAACAgIAAxkBAeLfTGfdhXlPLdyMr_PA2nAxtCwOq8CwAAISNQACx6ehSqkeK7OWc836NgQ"
+    aproved_sticker_id = "CAACAgIAAxkBAeLfjWfdhmXMrgLfaZJoEAWhTenCC6DrAALnNQACtoxBS2JmFwWrYLwGNgQ"
 
     # ✅ Ensure user is in the correct state
     if context.user_data.get("state") != "awaiting_deposit_amount":
@@ -1557,6 +1599,7 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
         """, (deposit_amount, transaction_id, user_id))
 
             conn.commit()
+            await update.message.reply_sticker(sticker=processing_sticker_id)
             await send_message(
             f"✅ *تم تسجيل المبلغ بنجاح!*\n\n"
             f"💰 *المبلغ:* `{deposit_amount}` SYP\n"
@@ -1573,7 +1616,8 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
          """, (deposit_amount, transaction_id, user_id))
 
          conn.commit()
-
+         
+         await update.message.reply_sticker(sticker=processing_sticker_id)   
          await send_message(
             f"✅ *تم تسجيل المبلغ بنجاح!*\n\n"
             f"💰 *المبلغ:* `{deposit_amount}` SYP\n"
@@ -1604,6 +1648,7 @@ async def handle_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TY
                 [InlineKeyboardButton("🔙 رجوع", callback_data='back')]
             ]
      reply_markup = InlineKeyboardMarkup(keyboard)
+     await update.message.reply_sticker(sticker=aproved_sticker_id)
      await send_message(f" ✅ تم تعبئة محفطة البوت \n"
                         f"Good Luck 🔥💫"
                         ,reply_markup=reply_markup, parse_mode="Markdown")
@@ -1757,7 +1802,9 @@ def verify_transaction_from_user_input(transaction_id, user_id):
     
     conn = connect_db()
     cursor = conn.cursor()
-
+    
+    
+    
     # ✅ Check if transaction already exists in `transactions`
     cursor.execute("SELECT amount, status FROM transactions WHERE external_transaction_id = %s AND user_id = %s", 
                    (transaction_id, user_id))
@@ -1812,7 +1859,7 @@ def verify_transaction_from_user_input(transaction_id, user_id):
 #==================================== website_charge_amount handler ============================
 
 async def handle_website_charge_amount_From_Bot(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str):
-    """Handles user input for charging their website account from bot balance while preventing duplicate requests."""
+    """Handles user input for charging their website account, prioritizing game winnings, and using bot balance if needed."""
 
     # ✅ Detect whether the update is a message or callback query
     if update.message:
@@ -1825,9 +1872,12 @@ async def handle_website_charge_amount_From_Bot(update: Update, context: Context
         return  # Prevent crashes if neither exists
 
     amount_text = update.message.text.strip()
-
+    processing_sticker_id = "CAACAgIAAxkBAeLe02fdg4hbX96ODk5SRx08-jtV08apAALDPQACzBMpSoUPzZoaigNGNgQ"
+    error_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    success_sticker_id="CAACAgIAAxkBAeLaJGfddT5-nwAB0D9SFNMeScLbCI3V1QACfz0AAi3JKUp2tyZPFVNcFzYE"
     # ✅ Step 1: Prevent duplicate requests
     if context.user_data.get("processing_transaction"):
+        await update.message.reply_sticker(sticker=processing_sticker_id)
         await send_message("⏳ لديك معاملة جارية بالفعل. يرجى الانتظار حتى تكتمل.")
         return
 
@@ -1840,39 +1890,51 @@ async def handle_website_charge_amount_From_Bot(update: Update, context: Context
     try:
         # ✅ Validate amount
         if not amount_text.isdigit():
+            await update.message.reply_sticker(sticker=error_sticker_id)
             await send_message("⚠️ *المبلغ يجب أن يكون رقمًا صحيحًا!*", parse_mode="Markdown")
             return
 
         amount = int(amount_text)
 
         if amount <= 0:
+            await update.message.reply_sticker(sticker=error_sticker_id)
             await send_message("⚠️ *المبلغ يجب أن يكون أكبر من 0 SYP*", parse_mode="Markdown")
             return
 
-        # ✅ Fetch user's bot balance
-        cursor.execute("SELECT bot_balance FROM wallets WHERE user_id = %s", (user_id,))
+        # ✅ Fetch user's balances
+        cursor.execute("SELECT bot_balance, game_balance FROM wallets WHERE user_id = %s", (user_id,))
         result = cursor.fetchone()
 
         if not result:
             await send_message("❌ *لم يتم العثور على حساب المحفظة الخاص بك!*", parse_mode="Markdown")
             return
 
-        bot_balance = result[0]
+        bot_balance, game_balance = result
 
-        if amount > bot_balance:
-            await send_message("⚠️ *رصيدك في المحفظة غير كافٍ لهذا التحويل!*", parse_mode="Markdown")
+        total_available_balance = bot_balance + game_balance
+
+        if amount > total_available_balance:
+            await update.message.reply_sticker(sticker=error_sticker_id)
+            await send_message("⚠️ *رصيدك غير كافٍ لهذا التحويل!*", parse_mode="Markdown")
             return
 
-        # ✅ Step 3: Deposit to player's website account FIRST
+        # ✅ Step 3: Determine how to deduct balance
+        game_used = min(amount, game_balance)  # Use game_balance first
+        bot_used = amount - game_used  # If more is needed, use bot_balance
+
+        # ✅ Step 4: Deposit to player's website account FIRST
+        await update.message.reply_sticker(sticker=processing_sticker_id)
         await send_message("🔄 *جارٍ تنفيذ عملية الشحن... يرجى الانتظار!*", parse_mode="Markdown")
 
         deposit_result = deposit_to_player(user_id, amount)
 
         if deposit_result.get("success"):
-            # ✅ Step 4: Update balances in the database
-            new_bot_balance = bot_balance - amount
+            # ✅ Step 5: Update balances in the database
+            new_game_balance = game_balance - game_used
+            new_bot_balance = bot_balance - bot_used
 
-            cursor.execute("UPDATE wallets SET bot_balance = %s WHERE user_id = %s", (new_bot_balance, user_id))
+            cursor.execute("UPDATE wallets SET game_balance = %s, bot_balance = %s WHERE user_id = %s", 
+                           (new_game_balance, new_bot_balance, user_id))
             conn.commit()
 
             # ✅ Fetch the user's current website balance
@@ -1884,27 +1946,30 @@ async def handle_website_charge_amount_From_Bot(update: Update, context: Context
 
             new_website_balance = balance_details["balance"]
 
-            cursor.execute("UPDATE wallets SET website_balance = %s WHERE user_id = %s", (new_website_balance, user_id))
+            cursor.execute("UPDATE wallets SET website_balance = %s WHERE user_id = %s", 
+                           (new_website_balance, user_id))
             conn.commit()
 
             success_message = (
                 f"✅ *تم تحويل المبلغ بنجاح إلى حسابك على الموقع!*\n\n"
                 f"💰 *المبلغ المحول:* `{amount}` SYP\n"
+                f"🎰 *رصيد أرباح الألعاب بعد الخصم:* `{new_game_balance}` SYP\n"
                 f"🤖 *رصيدك في المحفظة بعد الخصم:* `{new_bot_balance}` SYP\n"
                 f"🌍 *رصيدك في الموقع بعد التعبئة:* `{new_website_balance}` SYP"
             )
+            await update.message.reply_sticker(sticker=success_sticker_id)
             await send_message(success_message, parse_mode="Markdown")
 
         else:
             # ✅ Replace deposit failure message with a custom response
-           error_message = f"❌ *فشل في الإيداع في حساب الموقع!*\n⚠️ السبب: {deposit_result['error']}"
-           await send_message(error_message, parse_mode="Markdown")
+            error_message = f"❌ *فشل في الإيداع في حساب الموقع!*\n⚠️ السبب: {deposit_result['error']}"
+            await send_message(error_message, parse_mode="Markdown")
 
     except Exception as e:
         await send_message(f"❌ *حدث خطأ غير متوقع:* `{str(e)}`", parse_mode="Markdown")
 
     finally:
-        # ✅ Step 5: Unlock the process so the user can make another request
+        # ✅ Step 6: Unlock the process so the user can make another request
         context.user_data["processing_transaction"] = False
         cursor.close()
         conn.close()
@@ -1926,9 +1991,15 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
         return  # Prevent crashes if neither exists
 
     amount_text = update.message.text.strip()
+    processing_sticker_id = "CAACAgIAAxkBAeLe02fdg4hbX96ODk5SRx08-jtV08apAALDPQACzBMpSoUPzZoaigNGNgQ"
+    error_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    success_sticker_id="CAACAgIAAxkBAeLaJGfddT5-nwAB0D9SFNMeScLbCI3V1QACfz0AAi3JKUp2tyZPFVNcFzYE"
+    warning_sticker_id ="CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+     
 
     # ✅ Step 1: Prevent duplicate requests
     if context.user_data.get("processing_transaction"):
+        await update.message.reply_sticker(sticker=processing_sticker_id)
         await send_message("⏳ لديك معاملة جارية بالفعل. يرجى الانتظار حتى تكتمل.", parse_mode="Markdown")
         return
 
@@ -1941,12 +2012,14 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
     try:
         # ✅ Validate amount
         if not amount_text.isdigit():
+            await update.message.reply_sticker(sticker=error_sticker_id)
             await send_message("⚠️ *المبلغ يجب أن يكون رقمًا صحيحًا!*", parse_mode="Markdown")
             return
 
         withdrawal_amount = int(amount_text)
 
         if withdrawal_amount <= 0:
+            await update.message.reply_sticker(sticker=error_sticker_id)
             await send_message("⚠️ *المبلغ يجب أن يكون أكبر من 0!*", parse_mode="Markdown")
             return
 
@@ -1963,6 +2036,7 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
         if withdrawal_amount > website_balance:
             keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data='back')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_sticker(sticker=warning_sticker_id)
             await send_message(
                 f"❌ *رصيدك غير كافٍ!* \n\n"
                 f"💰 *رصيد الموقع المتاح:* `{website_balance}` {balance_details['currency']}\n"
@@ -1973,6 +2047,7 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
             return
 
         # ✅ Step 3: Process the withdrawal request
+        await update.message.reply_sticker(sticker=processing_sticker_id)
         await send_message("🔄 *جارٍ تنفيذ عملية السحب... يرجى الانتظار!*", parse_mode="Markdown")
         withdrawal_status = withdraw_from_website(user_id, withdrawal_amount)
         
@@ -1989,6 +2064,7 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
             conn.commit()
             print("before the success message ")
             # ✅ Notify user about successful withdrawal
+            await update.message.reply_sticker(sticker=success_sticker_id)
             await send_message(
                 f"✅ *تمت عملية السحب بنجاح!*\n\n"
                 f"💰 *المبلغ المسحوب:* `{withdrawal_amount}` SYP\n"
@@ -2003,6 +2079,7 @@ async def handle_website_withdraw_amount_To_Bot(update: Update, context: Context
             # ✅ Withdrawal failed
             keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data='back')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_sticker(sticker=error_sticker_id)
             await send_message(
                 f"❌ *فشلت عملية السحب!*\n"
                 f"📌 السبب: {withdrawal_status.get('error', 'خطأ غير معروف')}",
@@ -2037,7 +2114,8 @@ async def handle_show_last_transactions(update: Update, context: ContextTypes.DE
     user_id = query.from_user.id
     conn = connect_db()
     cursor = conn.cursor()
-
+    
+    what_sticker_id ="CAACAgIAAxkBAeLkf2fdjvmHUYuWm-x2JOFH3xs--fgyAALUMAACmTChSgQ1fTazyf2VNgQ"
     try:
         # ✅ Fetch the last 5 transactions for the user
         cursor.execute("""
@@ -2050,6 +2128,7 @@ async def handle_show_last_transactions(update: Update, context: ContextTypes.DE
         transactions = cursor.fetchall()
 
         if not transactions:
+            await update.message.reply_sticker(sticker=what_sticker_id)
             await query.edit_message_text("🔍 *لا يوجد لديك أي معاملات حتى الآن.*", parse_mode="Markdown")
             return
 
@@ -2251,11 +2330,16 @@ async def process_withdrawal_amount_from_bot_to_user(update: Update, context: Co
         send_message = update.callback_query.message.reply_text
     else:
         return  # Prevent crashes if neither exists
-
+    
+   
+    erorr_sticker_id ="CAACAgIAAxkBAeLfqGfdhv5zCSIhUgJGjM6LbmkaIB9wAAJxOwACtUNZSjpcwC49bZ4dNgQ"
+    warning_sticker_id ="CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+    
     # ✅ Convert amount safely
     try:
         amount = int(amount)
     except ValueError:
+        await update.message.reply_sticker(sticker=erorr_sticker_id)
         await send_message("⚠️ *المبلغ يجب أن يكون رقمًا صحيحًا!*", parse_mode="Markdown")
         return
 
@@ -2276,6 +2360,7 @@ async def process_withdrawal_amount_from_bot_to_user(update: Update, context: Co
 
     # ✅ Check if the user has enough balance
     if amount > bot_balance:
+        await update.message.reply_sticker(sticker=warning_sticker_id)
         await send_message("⚠️ *رصيدك في المحفظة غير كافٍ لهذا السحب!*")
         return
 
@@ -2292,6 +2377,7 @@ async def process_withdrawal_amount_from_bot_to_user(update: Update, context: Co
         USD_to_SYP = round(amount * exchange_rate)
 
         if USD_to_SYP > bot_balance:
+            await update.message.reply_sticker(sticker=warning_sticker_id)
             await send_message("⚠️ *رصيدك في المحفظة غير كافٍ لهذا السحب!*")
             return
 
@@ -2359,7 +2445,8 @@ async def finalize_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE
         send_message = update.callback_query.message.reply_text  # ✅ Use update.callback_query.message
     else:
         return 
-    
+    success_sticker_id="CAACAgIAAxkBAeLfjWfdhmXMrgLfaZJoEAWhTenCC6DrAALnNQACtoxBS2JmFwWrYLwGNgQ"
+
     # Retrieve stored withdrawal details
     amount = context.user_data.get("withdraw_amount")
     method = context.user_data.get("withdraw_method")
@@ -2419,6 +2506,7 @@ async def finalize_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE
         conn.commit()
 
         # Notify the user
+        await update.message.reply_sticker(sticker=success_sticker_id)
         await send_message(
             f"✅ *طلب السحب قيد المعالجة!* 🏦\n\n"
             f"💳 *طريقة السحب:* `{method.upper()}`\n"
@@ -2438,6 +2526,98 @@ async def finalize_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE
         cursor.close()
         conn.close()
 
+import random
+
+async def start_slot_machine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the slot machine game and send a sticker animation."""
+    user_id = update.callback_query.from_user.id
+    chat_id = update.callback_query.message.chat_id  # Get chat ID
+
+    
+
+    # ✅ Connect to the database
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    # ✅ Check if global balance has exceeded 1,000,000 SYP
+    cursor.execute("SELECT SUM(game_balance) FROM wallets")
+    total_game_balance = cursor.fetchone()[0] or 0
+
+    if total_game_balance >= 1000000:
+        await update.callback_query.message.reply_text(
+            "🚫 *تم إيقاف اللعبة!* لقد وصل مجموع الجوائز إلى الحد الأقصى (1,000,000 SYP).",
+            parse_mode="Markdown"
+        )
+        conn.close()
+        return
+
+    # ✅ Check user's game balance
+    cursor.execute("SELECT game_balance FROM wallets WHERE user_id = %s", (user_id,))
+    game_balance = cursor.fetchone()
+
+    if not game_balance:
+        game_balance = (0,)  # Default to 0 if user has no record
+
+    # ✅ Check if the user already hit their 50,000 SYP limit
+    cursor.execute("SELECT game_status from wallets where user_id =%s",(user_id,))
+    game_status = cursor.fetchone()
+    if game_balance[0] >= 50000 or game_status[0] == 0:
+        slot_sticker_id = "CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+        await context.bot.send_sticker(chat_id=chat_id, sticker=slot_sticker_id)# if the game status = 0 that's mean that the player reached his limits 
+        await update.callback_query.message.reply_text(
+            "⚠️ *لقد وصلت للحد الأقصى لأرباحك (50,000 SYP).*\n\n"
+            "🚫 *لا يمكنك اللعب مرة أخرى.*",
+            parse_mode="Markdown"
+        )
+        cursor.execute("UPDATE wallets set game_status = %s where user_id = %s" ,(0,user_id))
+        conn.commit()
+        conn.close()
+        return
+
+    # ✅ Generate slot machine result
+    symbols = ["🍒", "🍋", "🍉"]
+    result = [random.choice(symbols) for _ in range(3)]
+
+    # ✅ Check if the player won (all symbols match)
+    win_amount = 25000 if result[0] == result[1] == result[2] else 0
+
+    if win_amount > 0:
+        
+        cursor.execute("UPDATE wallets SET game_balance = game_balance + %s WHERE user_id = %s", (win_amount, user_id))
+        conn.commit()
+        # ✅ Send Slot Machine Sticker (Replace with your own `file_id`)
+        slot_sticker_id = "CAACAgIAAxkBAeLaJGfddT5-nwAB0D9SFNMeScLbCI3V1QACfz0AAi3JKUp2tyZPFVNcFzYE"
+        await context.bot.send_sticker(chat_id=chat_id, sticker=slot_sticker_id)
+
+    # ✅ Get updated total balance after the spin
+    cursor.execute("SELECT SUM(game_balance) FROM wallets")
+    updated_total_game_balance = cursor.fetchone()[0] or 0
+
+    conn.close()
+
+    # ✅ Generate game message
+    message = f"🎰 *نتيجة السحب:* \n\n {result[0]} | {result[1]} | {result[2]} |\n\n"
+
+    if win_amount > 0:
+        message += (
+            f"🎉 *مبروك!* ربحت `{win_amount}` ل.س 🎉\n"
+            f"💰 *رصيدك في اللعبة:* `{game_balance[0] + win_amount}` ل.س\n"
+            "🔄 استخدم الأرباح لشحن حسابك في WayXbet!"
+        )
+    else:
+        message += "😔 *للأسف لم تفز هذه المرة.*\n🔄 حاول مرة أخرى!"
+
+    # ✅ Check if the total game balance exceeded the global limit
+    if updated_total_game_balance >= 1000000:
+        slot_sticker_id = "CAACAgIAAxkBAeLea2fdghlNXrLzSIKqJ_kW8t43fAE1AALzQQACb7NoSV-j4NDXxKN2NgQ"
+        await context.bot.send_sticker(chat_id=chat_id, sticker=slot_sticker_id)
+        message += "\n\n🚫 *اللعبة مقفلة الآن! وصلت جميع الجوائز إلى الحد الأقصى (1,000,000 SYP).*"
+
+    # ✅ Send result message
+    keyboard = [[InlineKeyboardButton("🔄 لعب مرة أخرى", callback_data="slot_machine")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 
